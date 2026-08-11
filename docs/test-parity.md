@@ -1,6 +1,6 @@
 # Python test parity
 
-The Python package is the behavioral test baseline for `@tfrs/auth`. TypeScript
+The Python package is the behavioral test baseline for `@turingfocus/tfrs-auth`. TypeScript
 uses asynchronous platform APIs only, so Python sync/async duplicates map to one
 TypeScript case. Parameterized wire and error cases remain independently counted.
 

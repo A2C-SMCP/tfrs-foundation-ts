@@ -1,0 +1,84 @@
+name: tfrs-foundation-ts protected npm release
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected-version:
+        description: Exact @turingfocus/tfrs-auth version on main
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: tfrs-foundation-ts-npm-production
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout approved main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+
+      - name: Activate pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.14.0 --activate
+
+      - name: Install release dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify trusted-publishing npm CLI
+        run: test "$(pnpm exec npm --version)" = "11.18.0"
+
+      - name: Verify requested version
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+        run: |
+          package_version="$(node -p "require('./packages/tfrs-auth/package.json').version")"
+          test "${package_version}" = "${EXPECTED_VERSION}"
+
+      - name: Run complete release gate
+        run: pnpm check
+
+      - name: Verify npm package contents
+        run: pnpm exec npm pack --dry-run ./packages/tfrs-auth
+
+      - name: Publish with npm Trusted Publishing
+        env:
+          EXPECTED_VERSION: ${{ inputs.expected-version }}
+        run: |
+          if pnpm exec npm view "@turingfocus/tfrs-auth@${EXPECTED_VERSION}" version >/dev/null 2>&1; then
+            echo "@turingfocus/tfrs-auth@${EXPECTED_VERSION} is already published"
+          else
+            pnpm exec npm publish ./packages/tfrs-auth --access public
+          fi
+
+      - name: Create or reconcile GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: v${{ inputs.expected-version }}
+        run: |
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${GITHUB_SHA}" \
+              --title "@turingfocus/tfrs-auth ${RELEASE_TAG}" \
+              --generate-notes
+          fi
