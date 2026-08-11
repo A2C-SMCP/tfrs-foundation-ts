@@ -1,9 +1,23 @@
 {
-  "name": "@tfrs/auth",
+  "name": "@turingfocus/tfrs-auth",
   "version": "0.1.0",
   "description": "TFRS shared authentication contracts, token exchange, caching, and JWT verification",
   "type": "module",
   "license": "MIT",
+  "author": "TuringFocus",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/A2C-SMCP/tfrs-foundation-ts.git",
+    "directory": "packages/tfrs-auth"
+  },
+  "homepage": "https://github.com/A2C-SMCP/tfrs-foundation-ts/tree/main/packages/tfrs-auth#readme",
+  "bugs": {
+    "url": "https://github.com/A2C-SMCP/tfrs-foundation-ts/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=20"

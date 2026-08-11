@@ -1,4 +1,4 @@
-# `@tfrs/auth`
+# `@turingfocus/tfrs-auth`
 
 Framework-independent TypeScript client primitives for TFRS access tokens.
 
@@ -8,7 +8,7 @@ import {
   ClientCredentials,
   createBearerFetch,
   JwtVerifier,
-} from "@tfrs/auth";
+} from "@turingfocus/tfrs-auth";
 
 const credential = ClientCredentials.forRobot({
   clientId: "turingfocus:000101",
