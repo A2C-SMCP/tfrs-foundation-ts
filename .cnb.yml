@@ -1,0 +1,106 @@
+# ========== tfrs-foundation-ts CI/CD（CNB）==========
+# main push / pull_request → corepack 固定 pnpm 10.14.0 + pnpm check
+#   （lint + strict typecheck + coverage 阈值 + build）+ npm pack --dry-run
+# tag v*              → 版本一致性校验（tag == package.json version）→ pnpm check
+#                        → npm publish（幂等，token 走密钥仓库 imports）→ git:release
+#                        自动为 tag 创建 CNB Release（含源码包）
+#
+# NPM_TOKEN 经 CNB 密钥仓库（imports）注入，绝不硬编码进本文件；
+# 密钥文件用 allow_slugs/allow_events 限定「仅本仓的 tag_push」可引用。详见 docs/release.md。
+
+.common-config: &common-config
+  docker:
+    image: node:24-slim
+
+# ---------- 测试 Pipeline（lint + typecheck + coverage + build）----------
+.lint-test-pipeline: &lint-test-pipeline
+  name: lint-and-test
+  <<: *common-config
+  stages:
+    - name: setup
+      jobs:
+        - name: install
+          script: |
+            echo "[CI] 激活固定 pnpm（corepack）..."
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+            echo "[CI] 安装依赖（frozen lockfile）..."
+            pnpm install --frozen-lockfile
+            echo "[CI] 依赖安装完成"
+    - name: code-quality
+      jobs:
+        - name: pnpm-check
+          script: |
+            echo "[CI] pnpm check（lint + typecheck + coverage + build）..."
+            pnpm check
+            echo "[CI] 质量关卡通过！"
+        - name: npm-pack
+          script: |
+            echo "[CI] 校验 npm 包内容（pack --dry-run）..."
+            pnpm exec npm pack --dry-run ./packages/tfrs-auth
+
+# ---------- 发布 Pipeline（tag 触发：版本校验 + npm publish）----------
+.build-publish-pipeline: &build-publish-pipeline
+  name: build-and-publish
+  <<: *common-config
+  imports:
+    # 密钥仓库注入 NPM_TOKEN（npm granular access token，仅 @turingfocus/tfrs-auth publish 权限）
+    - https://cnb.cool/turingfocus/build_env/-/blob/main/tfrs_foundation.yaml
+  stages:
+    - name: release-gate
+      jobs:
+        - name: gate
+          script: |
+            set -e
+            echo "[CI] 激活固定 pnpm（corepack）..."
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+            echo "[CI] 安装依赖（frozen lockfile）..."
+            pnpm install --frozen-lockfile
+            echo "[CI] 校验 npm CLI 版本（与 GitHub 流水线同等要求）..."
+            test "$(pnpm exec npm --version)" = "11.18.0"
+            echo "[CI] 版本一致性校验：tag ${CNB_BRANCH} ↔ packages/tfrs-auth/package.json..."
+            tag_version="${CNB_BRANCH#v}"
+            package_version="$(node -p "require('./packages/tfrs-auth/package.json').version")"
+            test "${tag_version}" = "${package_version}" \
+              || { echo "FATAL: tag ${CNB_BRANCH} 与 package.json 版本 ${package_version} 不一致，拒绝发布"; exit 1; }
+            echo "[CI] 版本一致：@turingfocus/tfrs-auth@${package_version}"
+            echo "[CI] 完整发布关卡 pnpm check..."
+            pnpm check
+            echo "[CI] 校验 npm 包内容（pack --dry-run）..."
+            pnpm exec npm pack --dry-run ./packages/tfrs-auth
+    - name: publish
+      jobs:
+        - name: npm-publish
+          script: |
+            set -e
+            tag_version="${CNB_BRANCH#v}"
+            package_version="$(node -p "require('./packages/tfrs-auth/package.json').version")"
+            test "${tag_version}" = "${package_version}"
+            echo "[CI] 幂等发布 @turingfocus/tfrs-auth@${package_version}..."
+            if pnpm exec npm view "@turingfocus/tfrs-auth@${package_version}" version >/dev/null 2>&1; then
+              echo "[CI] ${package_version} 已发布，跳过（幂等）"
+            else
+              # token 写入 .npmrc 而非命令行/日志；用后即删
+              echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
+              pnpm exec npm publish ./packages/tfrs-auth --access public
+              rm -f .npmrc
+              echo "[CI] 发布完成 → https://www.npmjs.com/package/@turingfocus/tfrs-auth"
+            fi
+
+# ========== 触发器 ==========
+# CI：MR（预合并代码，作为合并门禁状态）+ 合入 main
+main:
+  push:
+    - *lint-test-pipeline
+  pull_request:
+    - *lint-test-pipeline
+
+# 版本 tag（语义化 vX.Y.Z）：git:release 创建 CNB Release（含源码包），与 npm 发布并行
+"v*":
+  tag_push:
+    - name: create-cnb-release
+      type: git:release
+      options:
+        latest: true
+    - *build-publish-pipeline
