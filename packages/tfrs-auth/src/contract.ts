@@ -61,6 +61,22 @@ export const SubjectTokenType = {
 export type SubjectTokenType =
   (typeof SubjectTokenType)[keyof typeof SubjectTokenType];
 
+/** Optional token-exchange form field: token_profile=session (TFRM-189). */
+export const TOKEN_PROFILE_FORM_FIELD = "token_profile";
+
+/** Discrete token profiles; the Manager controls TTL per profile (TFRM-189). */
+export const TokenProfile = {
+  Session: "session",
+} as const;
+
+export type TokenProfile = (typeof TokenProfile)[keyof typeof TokenProfile];
+
+const tokenProfileValues = new Set<string>(Object.values(TokenProfile));
+
+export function isTokenProfile(value: unknown): value is TokenProfile {
+  return typeof value === "string" && tokenProfileValues.has(value);
+}
+
 export const ISSUED_TOKEN_TYPE_JWT = SubjectTokenType.Jwt;
 export const TOKEN_TYPE_BEARER = "Bearer";
 

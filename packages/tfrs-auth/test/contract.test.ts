@@ -170,3 +170,18 @@ describe("Python parity: test_contract.py", () => {
     ).toThrow(/org/u);
   });
 });
+
+describe("TypeScript additions: session token profile contract (TFRM-189)", () => {
+  it("locks the token profile wire field and session value", () => {
+    expect(contract.TOKEN_PROFILE_FORM_FIELD).toBe("token_profile");
+    expect(contract.TokenProfile.Session).toBe("session");
+  });
+
+  it("default-deny token profile lookup", () => {
+    expect(contract.isTokenProfile(contract.TokenProfile.Session)).toBe(true);
+    expect(contract.isTokenProfile("banana")).toBe(false);
+    expect(contract.isTokenProfile(42)).toBe(false);
+    expect(contract.isTokenProfile(null)).toBe(false);
+    expect(contract.isTokenProfile(undefined)).toBe(false);
+  });
+});

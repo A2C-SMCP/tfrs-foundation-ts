@@ -8,24 +8,28 @@ TypeScript case. Parameterized wire and error cases remain independently counted
 | --- | --- | ---: | ---: |
 | `test_client_cache.py` | `client-cache.test.ts` | 7 | 11 |
 | `test_client_credentials.py` | `client-credentials.test.ts` | 8 | 15 |
-| `test_contract.py` | `contract.test.ts` | 13 | 14 |
+| `test_contract.py` | `contract.test.ts` | 13 | 16 |
 | `test_discovery.py` | `discovery.test.ts` | 16 | 21 |
 | `test_e2e.py` | `e2e.test.ts` | 3 | 3 (gated) |
-| `test_pat.py` | `pat.test.ts` | 11 | 11 |
+| `test_pat.py` | `pat.test.ts` | 11 | 12 |
 | `test_transport.py` | `transport.test.ts` | 3 | 3 |
-| `test_user_jwt.py` | `user-jwt.test.ts` | 12 | 12 |
+| `test_user_jwt.py` | `user-jwt.test.ts` | 12 | 22 |
 | `test_verify.py` | `verify.test.ts` | 23 | 29 |
-| **Total** |  | **96** | **119** |
+| **Total** |  | **96** | **132** |
 
 The additional TypeScript cases lock fixes and runtime-specific failure paths:
 generic gateway and network retries, malformed token responses, strict claim
 typing, RFC well-known path and identity binding, malformed or unreachable JWKS,
-and JWKS refresh single-flight.
+JWKS refresh single-flight, and the session-profile token exchange (TFRM-189):
+wire field rendering, default-profile zero regression, unknown-profile and
+subject-type boundary rejection (no value echo), server `expires_in` honoring,
+per-source cache isolation with captured wire forms, token secrecy in errors,
+and machine-identity type boundaries.
 
 ## Local gates
 
 ```bash
-pnpm test           # L1: 116 pass, three gated E2E cases skip without credentials
+pnpm test           # L1: 129 pass, three gated E2E cases skip without credentials
 pnpm test:coverage  # L1 plus enforced repository coverage thresholds
 pnpm check          # lint + strict typecheck + coverage gate + package build
 ```
