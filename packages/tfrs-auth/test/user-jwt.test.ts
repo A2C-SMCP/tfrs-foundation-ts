@@ -260,6 +260,21 @@ describe("TypeScript additions: session token profile (TFRM-189)", () => {
     expect(() => credential.requestForm()).toThrow(/token profile/u);
   });
 
+  it("never echoes a misplaced subject JWT through the profile guard", () => {
+    try {
+      buildTokenExchangeForm({
+        subjectToken: USER_JWT,
+        subjectTokenType: SubjectTokenType.Jwt,
+        audience: "robot:turingfocus:000042",
+        tokenProfile: USER_JWT as unknown as TokenProfile,
+      });
+      expect.fail("expected TypeError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(TypeError);
+      expect(String(error)).not.toContain(USER_JWT);
+    }
+  });
+
   it("exchanges a session-profile User JWT and honors the server expires_in", async () => {
     const fetchFn = vi.fn<typeof fetch>(async (input, init) => {
       const request = new Request(input, init);
@@ -288,29 +303,41 @@ describe("TypeScript additions: session token profile (TFRM-189)", () => {
   });
 
   it("keeps session and default profile caches isolated per source", async () => {
+    const sessionForms: Record<string, string>[] = [];
+    const defaultForms: Record<string, string>[] = [];
+    const sessionFetch = vi.fn<typeof fetch>(async (input, init) => {
+      const request = new Request(input, init);
+      sessionForms.push(
+        Object.fromEntries(new URLSearchParams(await request.text())),
+      );
+      return Response.json({
+        access_token: "session-token",
+        issued_token_type: SubjectTokenType.Jwt,
+        token_type: "Bearer",
+        expires_in: 43_200,
+        scope: "config:read",
+      });
+    });
+    const defaultFetch = vi.fn<typeof fetch>(async (input, init) => {
+      const request = new Request(input, init);
+      defaultForms.push(
+        Object.fromEntries(new URLSearchParams(await request.text())),
+      );
+      return Response.json({
+        access_token: "default-token",
+        issued_token_type: SubjectTokenType.Jwt,
+        token_type: "Bearer",
+        expires_in: 300,
+        scope: "config:read",
+      });
+    });
     const sessionSource = new CachingTokenSource(sessionCredential(), {
       tokenUrl: TOKEN_URL,
-      fetch: vi.fn(async () =>
-        Response.json({
-          access_token: "session-token",
-          issued_token_type: SubjectTokenType.Jwt,
-          token_type: "Bearer",
-          expires_in: 43_200,
-          scope: "config:read",
-        }),
-      ),
+      fetch: sessionFetch,
     });
     const defaultSource = new CachingTokenSource(credential(), {
       tokenUrl: TOKEN_URL,
-      fetch: vi.fn(async () =>
-        Response.json({
-          access_token: "default-token",
-          issued_token_type: SubjectTokenType.Jwt,
-          token_type: "Bearer",
-          expires_in: 300,
-          scope: "config:read",
-        }),
-      ),
+      fetch: defaultFetch,
     });
     expect((await sessionSource.token()).accessToken).toBe("session-token");
     expect((await sessionSource.token()).accessToken).toBe("session-token");
@@ -318,6 +345,10 @@ describe("TypeScript additions: session token profile (TFRM-189)", () => {
     expect((await sessionSource.token()).accessToken).not.toBe(
       (await defaultSource.token()).accessToken,
     );
+    expect(sessionFetch).toHaveBeenCalledTimes(1);
+    expect(defaultFetch).toHaveBeenCalledTimes(1);
+    expect(sessionForms[0]).toHaveProperty("token_profile", "session");
+    expect(defaultForms[0]).not.toHaveProperty("token_profile");
   });
 
   it("never leaks the subject JWT or access token into error text", async () => {

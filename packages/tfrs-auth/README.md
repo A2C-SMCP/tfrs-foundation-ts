@@ -53,14 +53,18 @@ import { TokenProfile, UserJwtCredential } from "@turingfocus/tfrs-auth";
 const sessionCredential = new UserJwtCredential({
   userJwt,
   audience: "robot:turingfocus:000042",
-  scope: ["a2a:invoke"],
+  scope: "a2a:invoke",
   tokenProfile: TokenProfile.Session,
 });
 ```
 
 Only `UserJwtCredential` exposes `tokenProfile`; machine identities
 (`ClientCredentials`, `PatCredential`) cannot express it, and unknown profile
-values are rejected at the form boundary.
+values or non-JWT subject types are rejected at the form boundary.
+
+Each `CachingTokenSource` holds the private cache of its single credential, so
+profiles are structurally isolated: build one source per profile and their
+tokens never mix.
 
 ## Testing
 
