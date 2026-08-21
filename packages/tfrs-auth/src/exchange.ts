@@ -1,9 +1,12 @@
 import {
   GrantType,
   HOUSE_PAYMENT_REDIRECT_FIELD,
+  isTokenProfile,
   ISSUED_TOKEN_TYPE_JWT,
   SubjectTokenType,
+  TOKEN_PROFILE_FORM_FIELD,
   TOKEN_TYPE_BEARER,
+  type TokenProfile,
 } from "./contract.js";
 import {
   fromOAuthError,
@@ -40,13 +43,27 @@ export function buildTokenExchangeForm(options: {
   subjectTokenType: string;
   audience: string;
   scope?: string | null | undefined;
+  tokenProfile?: TokenProfile | null | undefined;
 }): Record<string, string> {
+  // Runtime guard for untyped callers; the Manager fails unknown profiles
+  // with invalid_request, so reject them before they reach the wire. The
+  // value itself is never echoed: a misplaced subject token must not leak
+  // into error text.
+  const tokenProfile: unknown = options.tokenProfile;
+  if (
+    tokenProfile !== undefined &&
+    tokenProfile !== null &&
+    !isTokenProfile(tokenProfile)
+  ) {
+    throw new TypeError(`Unknown token profile (${typeof tokenProfile})`);
+  }
   return compactForm({
     grant_type: GrantType.TokenExchange,
     subject_token: options.subjectToken,
     subject_token_type: options.subjectTokenType,
     audience: options.audience,
     scope: options.scope,
+    [TOKEN_PROFILE_FORM_FIELD]: options.tokenProfile,
   });
 }
 

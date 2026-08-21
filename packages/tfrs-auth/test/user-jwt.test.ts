@@ -3,14 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildTokenExchangeForm,
   CachingTokenSource,
+  ClientCredentials,
   GrantType,
   InvalidGrantError,
   InvalidScopeError,
   InvalidTargetError,
+  PatCredential,
   PaymentRequiredError,
   RateLimitedError,
   SubjectTokenType,
   type TokenExchangeError,
+  TokenProfile,
   UserJwtCredential,
 } from "../src/index.js";
 
@@ -174,5 +177,204 @@ describe("Python parity: test_user_jwt.py", () => {
       httpStatus: 402,
       renewUrl: "https://pay",
     });
+  });
+});
+
+describe("TypeScript additions: session token profile (TFRM-189)", () => {
+  const sessionForm = {
+    ...expectedForm,
+    token_profile: "session",
+  };
+
+  function sessionCredential(): UserJwtCredential {
+    return new UserJwtCredential({
+      userJwt: USER_JWT,
+      audience: "robot:turingfocus:000042",
+      scope: "config:read",
+      tokenProfile: TokenProfile.Session,
+    });
+  }
+
+  it("adds token_profile=session to the exchange form when requested", () => {
+    expect(
+      buildTokenExchangeForm({
+        subjectToken: USER_JWT,
+        subjectTokenType: SubjectTokenType.Jwt,
+        audience: "robot:turingfocus:000042",
+        scope: "config:read",
+        tokenProfile: TokenProfile.Session,
+      }),
+    ).toEqual(sessionForm);
+  });
+
+  it("omits token_profile by default (5-minute profile zero regression)", () => {
+    expect(
+      buildTokenExchangeForm({
+        subjectToken: USER_JWT,
+        subjectTokenType: SubjectTokenType.Jwt,
+        audience: "robot:turingfocus:000042",
+        scope: "config:read",
+      }),
+    ).toEqual(expectedForm);
+    expect(
+      buildTokenExchangeForm({
+        subjectToken: USER_JWT,
+        subjectTokenType: SubjectTokenType.Jwt,
+        audience: "robot:turingfocus:000042",
+        scope: "config:read",
+        tokenProfile: null,
+      }),
+    ).toEqual(expectedForm);
+    expect(expectedForm).not.toHaveProperty("token_profile");
+  });
+
+  it("renders the session profile through UserJwtCredential", () => {
+    expect(sessionCredential().requestForm()).toEqual(sessionForm);
+  });
+
+  it("rejects an unknown token profile at the form boundary", () => {
+    expect(() =>
+      buildTokenExchangeForm({
+        subjectToken: USER_JWT,
+        subjectTokenType: SubjectTokenType.Jwt,
+        audience: "robot:turingfocus:000042",
+        tokenProfile: "banana" as unknown as TokenProfile,
+      }),
+    ).toThrow(TypeError);
+    expect(() =>
+      buildTokenExchangeForm({
+        subjectToken: USER_JWT,
+        subjectTokenType: SubjectTokenType.Jwt,
+        audience: "robot:turingfocus:000042",
+        tokenProfile: "banana" as unknown as TokenProfile,
+      }),
+    ).toThrow(/token profile/u);
+  });
+
+  it("rejects an unknown token profile from a credential at request time", () => {
+    const credential = new UserJwtCredential({
+      userJwt: USER_JWT,
+      audience: "robot:turingfocus:000042",
+      tokenProfile: "banana" as unknown as TokenProfile,
+    });
+    expect(() => credential.requestForm()).toThrow(/token profile/u);
+  });
+
+  it("exchanges a session-profile User JWT and honors the server expires_in", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async (input, init) => {
+      const request = new Request(input, init);
+      expect(
+        Object.fromEntries(new URLSearchParams(await request.text())),
+      ).toEqual(sessionForm);
+      return Response.json({
+        access_token: "session.header.payload.sig",
+        issued_token_type: SubjectTokenType.Jwt,
+        token_type: "Bearer",
+        // Deliberately not the Manager default (43200): a hardcoded session
+        // TTL in the SDK would still pass if the fixture used 43_200.
+        expires_in: 43_201,
+        scope: "config:read",
+      });
+    });
+    const token = await new CachingTokenSource(sessionCredential(), {
+      tokenUrl: TOKEN_URL,
+      fetch: fetchFn,
+      clock: () => 1_000,
+    }).token();
+    expect(token).toMatchObject({
+      accessToken: "session.header.payload.sig",
+      expiresAt: 1_000 + 43_201,
+    });
+  });
+
+  it("keeps session and default profile caches isolated per source", async () => {
+    const sessionSource = new CachingTokenSource(sessionCredential(), {
+      tokenUrl: TOKEN_URL,
+      fetch: vi.fn(async () =>
+        Response.json({
+          access_token: "session-token",
+          issued_token_type: SubjectTokenType.Jwt,
+          token_type: "Bearer",
+          expires_in: 43_200,
+          scope: "config:read",
+        }),
+      ),
+    });
+    const defaultSource = new CachingTokenSource(credential(), {
+      tokenUrl: TOKEN_URL,
+      fetch: vi.fn(async () =>
+        Response.json({
+          access_token: "default-token",
+          issued_token_type: SubjectTokenType.Jwt,
+          token_type: "Bearer",
+          expires_in: 300,
+          scope: "config:read",
+        }),
+      ),
+    });
+    expect((await sessionSource.token()).accessToken).toBe("session-token");
+    expect((await sessionSource.token()).accessToken).toBe("session-token");
+    expect((await defaultSource.token()).accessToken).toBe("default-token");
+    expect((await sessionSource.token()).accessToken).not.toBe(
+      (await defaultSource.token()).accessToken,
+    );
+  });
+
+  it("never leaks the subject JWT or access token into error text", async () => {
+    const accessToken = "session.header.payload.sig";
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          access_token: accessToken,
+          issued_token_type: SubjectTokenType.Jwt,
+          token_type: "Bearer",
+          expires_in: 43_201,
+          scope: "config:read",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: "invalid_grant", error_description: "subject revoked" },
+          { status: 400 },
+        ),
+      );
+    const source = new CachingTokenSource(sessionCredential(), {
+      tokenUrl: TOKEN_URL,
+      fetch: fetchFn,
+      maxRetries: 0,
+    });
+    // First obtain the real access token so it exists in the source state,
+    // then force a failing exchange: neither token may surface in errors.
+    expect((await source.token()).accessToken).toBe(accessToken);
+    source.invalidate();
+    try {
+      await source.token();
+      expect.fail("expected InvalidGrantError");
+    } catch (error) {
+      expect(error).toBeInstanceOf(InvalidGrantError);
+      expect(String(error)).not.toContain(USER_JWT);
+      expect(String(error)).not.toContain(accessToken);
+    }
+  });
+
+  it("keeps machine identities unable to express a token profile at the type boundary", () => {
+    const machineClient = new ClientCredentials({
+      clientId: "turingfocus:000101",
+      clientSecret: "tfp_secret",
+      audience: "robot:turingfocus:000042",
+      // @ts-expect-error machine identities cannot request a token profile
+      tokenProfile: TokenProfile.Session,
+    });
+    // @ts-expect-error ClientCredentials is a machine identity: no tokenProfile option
+    void machineClient.tokenProfile;
+    const machinePat = new PatCredential({
+      pat: "tfp_123",
+      audience: "robot:turingfocus:000042",
+      // @ts-expect-error machine identities cannot request a token profile
+      tokenProfile: TokenProfile.Session,
+    });
+    // @ts-expect-error PatCredential is a machine identity: no tokenProfile option
+    void machinePat.tokenProfile;
   });
 });
