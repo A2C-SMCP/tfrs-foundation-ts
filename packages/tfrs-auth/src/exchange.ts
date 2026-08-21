@@ -1,9 +1,12 @@
 import {
   GrantType,
   HOUSE_PAYMENT_REDIRECT_FIELD,
+  isTokenProfile,
   ISSUED_TOKEN_TYPE_JWT,
   SubjectTokenType,
+  TOKEN_PROFILE_FORM_FIELD,
   TOKEN_TYPE_BEARER,
+  type TokenProfile,
 } from "./contract.js";
 import {
   fromOAuthError,
@@ -40,13 +43,32 @@ export function buildTokenExchangeForm(options: {
   subjectTokenType: string;
   audience: string;
   scope?: string | null | undefined;
+  tokenProfile?: TokenProfile | null | undefined;
 }): Record<string, string> {
+  // Runtime guards for untyped callers; the Manager fails these with
+  // invalid_request, so reject them before they reach the wire. Neither
+  // message echoes values: a misplaced subject token must not leak into
+  // error text.
+  const tokenProfile: unknown = options.tokenProfile;
+  if (tokenProfile !== undefined && tokenProfile !== null) {
+    if (!isTokenProfile(tokenProfile)) {
+      throw new TypeError(`Unknown token profile (${typeof tokenProfile})`);
+    }
+    // Session profile is a user-subject capability (TFRM-189); machine
+    // identities have no session concept.
+    if (options.subjectTokenType !== SubjectTokenType.Jwt) {
+      throw new TypeError(
+        "Session token profile requires a JWT subject token",
+      );
+    }
+  }
   return compactForm({
     grant_type: GrantType.TokenExchange,
     subject_token: options.subjectToken,
     subject_token_type: options.subjectTokenType,
     audience: options.audience,
     scope: options.scope,
+    [TOKEN_PROFILE_FORM_FIELD]: options.tokenProfile,
   });
 }
 

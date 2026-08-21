@@ -40,6 +40,32 @@ const claims = await verifier.verify(accessToken, {
 TFRSManager is the source of truth for all mirrored wire contracts. Server-side
 framework middleware and authorization enforcement are intentionally excluded.
 
+## Session-profile tokens
+
+A user subject can request the session-profile Robot access token (TFRM-189,
+server-controlled TTL, default 12h) instead of the 5-minute connection profile
+by setting `tokenProfile` on the credential. When omitted, the wire form
+contains no `token_profile` field and the default profile applies:
+
+```ts
+import { TokenProfile, UserJwtCredential } from "@turingfocus/tfrs-auth";
+
+const sessionCredential = new UserJwtCredential({
+  userJwt,
+  audience: "robot:turingfocus:000042",
+  scope: "a2a:invoke",
+  tokenProfile: TokenProfile.Session,
+});
+```
+
+Only `UserJwtCredential` exposes `tokenProfile`; machine identities
+(`ClientCredentials`, `PatCredential`) cannot express it, and unknown profile
+values or non-JWT subject types are rejected at the form boundary.
+
+Each `CachingTokenSource` holds the private cache of its single credential, so
+profiles are structurally isolated: build one source per profile and their
+tokens never mix.
+
 ## Testing
 
 The nine test files mirror the Python package suites. Run `pnpm test` for the

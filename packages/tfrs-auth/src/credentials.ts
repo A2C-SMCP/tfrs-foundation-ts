@@ -2,6 +2,7 @@ import {
   robotAudience,
   scopesToString,
   SubjectTokenType,
+  type TokenProfile,
 } from "./contract.js";
 import {
   buildClientCredentialsForm,
@@ -89,11 +90,18 @@ export class UserJwtCredential implements Credential {
   readonly userJwt: string;
   readonly audience: string;
   readonly scope: string | undefined;
+  readonly tokenProfile: TokenProfile | undefined;
 
-  constructor(options: { userJwt: string; audience: string; scope?: string }) {
+  constructor(options: {
+    userJwt: string;
+    audience: string;
+    scope?: string;
+    tokenProfile?: TokenProfile;
+  }) {
     this.userJwt = options.userJwt;
     this.audience = options.audience;
     this.scope = options.scope === "" ? undefined : options.scope;
+    this.tokenProfile = options.tokenProfile;
   }
 
   requestForm(): Record<string, string> {
@@ -102,6 +110,7 @@ export class UserJwtCredential implements Credential {
       subjectTokenType: SubjectTokenType.Jwt,
       audience: this.audience,
       scope: this.scope,
+      tokenProfile: this.tokenProfile,
     });
   }
 }

@@ -12,6 +12,7 @@ import {
   RateLimitedError,
   SubjectTokenType,
   type TokenExchangeError,
+  TokenProfile,
 } from "../src/index.js";
 
 const TOKEN_URL = "https://user.example.test/api/v1/oauth/token";
@@ -155,5 +156,26 @@ describe("Python parity: test_pat.py", () => {
       httpStatus: 402,
       renewUrl: "https://pay",
     });
+  });
+});
+
+describe("TypeScript additions: session token profile is user-only (TFRM-189)", () => {
+  it("rejects a session token profile for an access-token subject at the form boundary", () => {
+    expect(() =>
+      buildTokenExchangeForm({
+        subjectToken: "tfp_pat_secret",
+        subjectTokenType: SubjectTokenType.AccessToken,
+        audience: "robot:turingfocus:000042",
+        tokenProfile: TokenProfile.Session,
+      }),
+    ).toThrow(TypeError);
+    expect(() =>
+      buildTokenExchangeForm({
+        subjectToken: "tfp_pat_secret",
+        subjectTokenType: SubjectTokenType.AccessToken,
+        audience: "robot:turingfocus:000042",
+        tokenProfile: TokenProfile.Session,
+      }),
+    ).toThrow(/JWT subject token/u);
   });
 });
