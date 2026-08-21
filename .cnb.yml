@@ -21,6 +21,7 @@
       jobs:
         - name: install
           script: |
+            set -e
             echo "[CI] 激活固定 pnpm（corepack）..."
             corepack enable
             corepack prepare pnpm@10.14.0 --activate
@@ -31,11 +32,13 @@
       jobs:
         - name: pnpm-check
           script: |
+            set -e
             echo "[CI] pnpm check（lint + typecheck + coverage + build）..."
             pnpm check
             echo "[CI] 质量关卡通过！"
         - name: npm-pack
           script: |
+            set -e
             echo "[CI] 校验 npm 包内容（pack --dry-run）..."
             pnpm exec npm pack --dry-run ./packages/tfrs-auth
 
@@ -58,7 +61,8 @@
             echo "[CI] 安装依赖（frozen lockfile）..."
             pnpm install --frozen-lockfile
             echo "[CI] 校验 npm CLI 版本（与 GitHub 流水线同等要求）..."
-            test "$(pnpm exec npm --version)" = "11.18.0"
+            test "$(pnpm exec npm --version)" = "11.18.0" \
+              || { echo "FATAL: npm CLI 版本不符合预期（需与 devDependencies 锁定的 npm@11.18.0 一致）"; exit 1; }
             echo "[CI] 版本一致性校验：tag ${CNB_BRANCH} ↔ packages/tfrs-auth/package.json..."
             tag_version="${CNB_BRANCH#v}"
             package_version="$(node -p "require('./packages/tfrs-auth/package.json').version")"
@@ -74,17 +78,23 @@
         - name: npm-publish
           script: |
             set -e
+            # 任何失败路径都不允许含 token 的 .npmrc 残留在工作区（trap 兜底清理）
+            trap 'rm -f .npmrc' EXIT
+            # dist 由上一 stage（release-gate 的 pnpm check）构建产出，stage 间共享工作区；
+            # 此处幂等自举 pnpm，stage 工作区隔离策略变化时仍可用
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
             tag_version="${CNB_BRANCH#v}"
             package_version="$(node -p "require('./packages/tfrs-auth/package.json').version")"
             test "${tag_version}" = "${package_version}"
             echo "[CI] 幂等发布 @turingfocus/tfrs-auth@${package_version}..."
             if pnpm exec npm view "@turingfocus/tfrs-auth@${package_version}" version >/dev/null 2>&1; then
-              echo "[CI] ${package_version} 已发布，跳过（幂等）"
+              echo "[CI] WARNING: ${package_version} 已在 npm，跳过发布（幂等）"
+              echo "[CI] WARNING: 若本次 tag 内容与已发布版本不同，请升版本号重新发版"
             else
-              # token 写入 .npmrc 而非命令行/日志；用后即删
+              # token 写入 .npmrc 而非命令行/日志；退出时由 trap 清理
               echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > .npmrc
               pnpm exec npm publish ./packages/tfrs-auth --access public
-              rm -f .npmrc
               echo "[CI] 发布完成 → https://www.npmjs.com/package/@turingfocus/tfrs-auth"
             fi
 

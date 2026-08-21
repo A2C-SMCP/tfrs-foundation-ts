@@ -13,6 +13,14 @@ main 同步，删除 GitHub 仓库后该步取消。
 | `v*` tag_push | `build-and-publish` | 版本一致性校验 → `pnpm check` → 幂等 `npm publish`（NPM_TOKEN 经密钥仓库注入） |
 | `v*` tag_push | `create-cnb-release`（`git:release`） | 自动为 tag 创建 CNB Release（含源码包，与发布并行） |
 
+> **合并门禁前置**：pull_request 流水线的状态要真正**阻塞**合并，需在 CNB
+> 仓库设置中开启「流水线通过才可合并」类分支门禁（`.cnb.yml` 只能产生状态，
+> 不能声明门禁）。开启前，流水线仅作为 MR 页面的 CI 状态展示。
+>
+> **tag 约束**：发布仅支持**正式版本 tag**（`vX.Y.Z`，SemVer 稳定段），不使用
+> 预发布 tag（如 `vX.Y.Z-beta.1`）——`npm publish` 不带 `--tag` 会把任何命中
+> `v*` 的 tag 发布到 `latest` dist-tag。
+
 ## One-time bootstrap（凭据迁移：GitHub OIDC → CNB 密钥仓库）
 
 GitHub 的 npm Trusted Publishing（OIDC）在 CNB 不可用（npmjs 仅认 GitHub/GitLab 等固定
@@ -93,7 +101,10 @@ git push origin v0.2.0     # 保留镜像 tag，便于源码跳转
 1. 删除 `.github/workflows/`（ci.yml + publish.yml），提交推 CNB → 同步 GitHub。
 2. npm 设置：移除 GitHub Actions Trusted Publisher（OIDC 不再使用）；保留上述
    granular access token 设置。
-3. 确认 CNB 流水线独立闭环后，删除 GitHub 镜像仓库，删除本文件的同步章节。
+3. **包元数据切换**：删除 GitHub 仓库前，把 `packages/tfrs-auth/package.json` 的
+   `repository` / `homepage` / `bugs`（目前指向 GitHub 镜像）改为 CNB 仓库地址或移除，
+   随下一次发版发布（否则 GitHub 删除后 npm 页链接全部 404）。
+4. 确认 CNB 流水线独立闭环后，删除 GitHub 镜像仓库，删除本文件的同步章节。
 
 ## 发布检查清单
 

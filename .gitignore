@@ -22,3 +22,6 @@ coverage/
 
 # Logs
 *.log
+
+# npm auth token file（CI 临时写入，用后即删；兜底防误提交）
+.npmrc
