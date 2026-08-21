@@ -1,6 +1,6 @@
 {
   "name": "@turingfocus/tfrs-auth",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TFRS shared authentication contracts, token exchange, caching, and JWT verification",
   "type": "module",
   "license": "MIT",
